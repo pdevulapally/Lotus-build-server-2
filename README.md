@@ -42,6 +42,21 @@ All routes are prefixed with `/api/v1` and require a Bearer token except `/healt
 | GET / POST | `/organizations/:organizationId/sessions/:sessionId/messages` | member-only |
 | POST / GET | `/organizations/:organizationId/api-keys` | OWNER/ADMIN; secret shown once |
 | DELETE | `/organizations/:organizationId/api-keys/:apiKeyId` | OWNER/ADMIN; revoke |
+| POST / GET | `/organizations/:organizationId/sessions/:sessionId/agent-runs` | start / list agent runs |
+| GET | `/organizations/:organizationId/agent-runs/:runId` | run status |
+| GET | `/organizations/:organizationId/agent-runs/:runId/steps` | persisted transcript |
+| GET | `/organizations/:organizationId/agent-runs/:runId/events` | SSE live stream |
+| POST | `/organizations/:organizationId/agent-runs/:runId/cancel` | request cancellation |
+
+## Autonomous agent
+
+Claude Code-style agent runs: each run executes an Anthropic tool-use loop
+(`read_file`, `write_file`, `list_files`, `bash`) inside a per-run sandboxed
+workspace under `AGENT_WORKSPACE_ROOT`. Tool paths are confined to the
+workspace (absolute paths and traversal rejected), bash commands run with a
+timeout and capped output, every step is persisted (`agent_steps`), and
+progress is streamed live over SSE. Runs are bounded by
+`AGENT_MAX_ITERATIONS` and can be cancelled.
 
 ## Scripts
 

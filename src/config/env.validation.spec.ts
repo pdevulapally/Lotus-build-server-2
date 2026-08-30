@@ -10,6 +10,11 @@ const validConfig = {
   CORS_ORIGINS: 'http://localhost:5173,https://app.example.com',
   RATE_LIMIT_TTL_SECONDS: '60',
   RATE_LIMIT_MAX: '100',
+  ANTHROPIC_API_KEY: 'test-key',
+  ANTHROPIC_MODEL: 'claude-sonnet-4-5',
+  AGENT_WORKSPACE_ROOT: '/var/lib/agent-workspaces',
+  AGENT_MAX_ITERATIONS: '50',
+  AGENT_TOOL_TIMEOUT_SECONDS: '120',
 };
 
 describe('validateEnv', () => {
