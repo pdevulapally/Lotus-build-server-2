@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// All writes go through the backend Admin SDK (which bypasses these rules).
+// Clients may only read documents belonging to organizations they are a
+// member of; membership documents are maintained by the backend.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOrgMember(orgId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+    }
+
+    match /agentRuns/{runId} {
+      allow read: if isOrgMember(resource.data.organizationId);
+      allow write: if false;
+
+      match /steps/{stepId} {
+        allow read: if isOrgMember(
+          get(/databases/$(database)/documents/agentRuns/$(runId)).data.organizationId
+        );
+        allow write: if false;
+      }
+    }
+
+    match /sessions/{sessionId}/messages/{messageId} {
+      allow read: if isOrgMember(resource.data.organizationId);
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

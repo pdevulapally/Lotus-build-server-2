@@ -1,7 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
-import { Env } from '../config/env.validation';
+import { DecodedIdToken } from 'firebase-admin/auth';
+import { FirebaseService } from '../firebase/firebase.service';
 
 export interface VerifiedIdentity {
   externalId: string;
@@ -9,43 +8,34 @@ export interface VerifiedIdentity {
   name: string | null;
 }
 
+const PASSWORD_PROVIDER = 'password';
+
 @Injectable()
 export class TokenVerifierService {
-  private readonly jwks: ReturnType<typeof createRemoteJWKSet>;
-  private readonly issuer: string;
-  private readonly audience: string;
-
-  constructor(configService: ConfigService<Env, true>) {
-    this.jwks = createRemoteJWKSet(
-      new URL(configService.get('AUTH_JWKS_URL', { infer: true })),
-    );
-    this.issuer = configService.get('AUTH_ISSUER', { infer: true });
-    this.audience = configService.get('AUTH_AUDIENCE', { infer: true });
-  }
+  constructor(private readonly firebase: FirebaseService) {}
 
   async verify(token: string): Promise<VerifiedIdentity> {
-    let payload: JWTPayload;
+    let decoded: DecodedIdToken;
     try {
-      const result = await jwtVerify(token, this.jwks, {
-        issuer: this.issuer,
-        audience: this.audience,
-      });
-      payload = result.payload;
+      decoded = await this.firebase.auth.verifyIdToken(token, true);
     } catch {
-      throw new UnauthorizedException('Invalid or expired access token');
+      throw new UnauthorizedException('Invalid, expired, or revoked ID token');
     }
 
-    const externalId = payload.sub;
-    const email = payload['email'];
-    const name = payload['name'];
-    if (typeof externalId !== 'string' || externalId.length === 0) {
-      throw new UnauthorizedException('Token is missing a subject claim');
-    }
+    const email = decoded.email;
     if (typeof email !== 'string' || email.length === 0) {
       throw new UnauthorizedException('Token is missing an email claim');
     }
+    if (
+      decoded.firebase.sign_in_provider === PASSWORD_PROVIDER &&
+      decoded.email_verified !== true
+    ) {
+      throw new UnauthorizedException('Email address is not verified');
+    }
+
+    const name = decoded['name'];
     return {
-      externalId,
+      externalId: decoded.uid,
       email,
       name: typeof name === 'string' && name.length > 0 ? name : null,
     };

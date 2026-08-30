@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { MessageRole, Session, SessionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { FirestoreMirrorService } from '../firebase/firestore-mirror.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
@@ -11,6 +12,7 @@ export class SessionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly mirror: FirestoreMirrorService,
   ) {}
 
   async create(
@@ -95,7 +97,7 @@ export class SessionsService {
     dto: CreateMessageDto,
   ) {
     await this.getById(organizationId, sessionId);
-    return this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: {
         sessionId,
         authorId: dto.role === MessageRole.USER ? authorId : null,
@@ -103,5 +105,14 @@ export class SessionsService {
         content: dto.content,
       },
     });
+    await this.mirror.addMessage(message.id, {
+      sessionId,
+      organizationId,
+      authorId: message.authorId,
+      role: message.role,
+      content: message.content,
+      createdAt: message.createdAt,
+    });
+    return message;
   }
 }

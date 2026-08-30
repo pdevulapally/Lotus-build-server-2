@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { Env } from './config/env.validation';
 
 async function bootstrap(): Promise<void> {
@@ -25,6 +26,7 @@ async function bootstrap(): Promise<void> {
       transform: true,
     }),
   );
+  app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();
 
   await app.listen(config.get('PORT', { infer: true }));

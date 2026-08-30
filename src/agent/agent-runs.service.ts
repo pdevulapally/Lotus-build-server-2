@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { AgentRun, AgentRunStatus } from '@prisma/client';
 import { Env } from '../config/env.validation';
 import { PrismaService } from '../prisma/prisma.service';
+import { FirestoreMirrorService } from '../firebase/firestore-mirror.service';
 import { AuditService } from '../audit/audit.service';
 import { AgentLoopService } from './agent-loop.service';
 import { CreateAgentRunDto } from './dto/create-agent-run.dto';
@@ -20,6 +21,7 @@ export class AgentRunsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly loop: AgentLoopService,
+    private readonly mirror: FirestoreMirrorService,
   ) {
     this.model = configService.get('ANTHROPIC_MODEL', { infer: true });
   }
@@ -45,6 +47,30 @@ export class AgentRunsService {
         model: this.model,
       },
     });
+    try {
+      await this.mirror.setRun(run.id, {
+        organizationId,
+        sessionId,
+        creatorId,
+        prompt: run.prompt,
+        model: run.model,
+        status: run.status,
+        error: null,
+        sandboxId: null,
+        startedAt: run.startedAt,
+        finishedAt: null,
+      });
+    } catch (error) {
+      await this.prisma.agentRun.update({
+        where: { id: run.id },
+        data: {
+          status: AgentRunStatus.FAILED,
+          error: 'Failed to mirror run to Firestore',
+          finishedAt: new Date(),
+        },
+      });
+      throw error;
+    }
     await this.audit.record({
       organizationId,
       actorId: creatorId,

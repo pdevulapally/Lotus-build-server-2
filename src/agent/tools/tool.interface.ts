@@ -1,8 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { SandboxHandle } from '../sandbox/sandbox.service';
 
 export interface ToolContext {
-  /** Absolute path of the run's sandboxed workspace directory. */
-  workspaceDir: string;
+  /** The isolated E2B sandbox owned by the current agent run. */
+  sandbox: SandboxHandle;
 }
 
 export interface AgentTool {

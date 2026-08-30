@@ -140,6 +140,7 @@ model AgentRun {
   model          String
   status         AgentRunStatus @default(RUNNING)
   error          String?
+  sandboxId      String?
   startedAt      DateTime       @default(now())
   finishedAt     DateTime?
   steps          AgentStep[]
