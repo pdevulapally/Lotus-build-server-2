@@ -118,6 +118,50 @@ model ApiKey {
   @@map("api_keys")
 }
 
+enum AgentRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AgentStepType {
+  ASSISTANT
+  TOOL_CALL
+  TOOL_RESULT
+}
+
+model AgentRun {
+  id             String         @id @default(uuid())
+  organizationId String
+  sessionId      String
+  creatorId      String
+  prompt         String
+  model          String
+  status         AgentRunStatus @default(RUNNING)
+  error          String?
+  startedAt      DateTime       @default(now())
+  finishedAt     DateTime?
+  steps          AgentStep[]
+
+  @@index([organizationId, sessionId])
+  @@map("agent_runs")
+}
+
+model AgentStep {
+  id        String        @id @default(uuid())
+  runId     String
+  index     Int
+  type      AgentStepType
+  name      String?
+  content   String
+  createdAt DateTime      @default(now())
+  run       AgentRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, index])
+  @@map("agent_steps")
+}
+
 model AuditLog {
   id             String        @id @default(uuid())
   organizationId String?

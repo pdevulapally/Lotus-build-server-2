@@ -12,6 +12,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { HealthModule } from './health/health.module';
+import { AgentModule } from './agent/agent.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { HealthModule } from './health/health.module';
     OrganizationsModule,
     SessionsModule,
     ApiKeysModule,
+    AgentModule,
     HealthModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

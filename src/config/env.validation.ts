@@ -14,6 +14,16 @@ export const envSchema = z.object({
     .pipe(z.array(z.string().url()).min(1)),
   RATE_LIMIT_TTL_SECONDS: z.coerce.number().int().min(1),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1),
+  ANTHROPIC_API_KEY: z.string().min(1),
+  ANTHROPIC_MODEL: z.string().min(1),
+  AGENT_WORKSPACE_ROOT: z
+    .string()
+    .min(1)
+    .refine((p) => p.startsWith('/'), {
+      message: 'must be an absolute path',
+    }),
+  AGENT_MAX_ITERATIONS: z.coerce.number().int().min(1).max(200),
+  AGENT_TOOL_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(600),
 });
 
 export type Env = z.infer<typeof envSchema>;
