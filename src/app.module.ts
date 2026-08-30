@@ -5,6 +5,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { Env, validateEnv } from './config/env.validation';
 import { PrismaModule } from './prisma/prisma.module';
+import { FirebaseModule } from './firebase/firebase.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -41,6 +42,7 @@ import { AgentModule } from './agent/agent.module';
       }),
     }),
     PrismaModule,
+    FirebaseModule,
     AuditModule,
     AuthModule,
     UsersModule,

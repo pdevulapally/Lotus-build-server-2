@@ -6,6 +6,7 @@ import {
 import { MembershipRole, Organization } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { FirestoreMirrorService } from '../firebase/firestore-mirror.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 
@@ -14,6 +15,7 @@ export class OrganizationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly mirror: FirestoreMirrorService,
   ) {}
 
   async create(
@@ -25,6 +27,12 @@ export class OrganizationsService {
     });
     if (existing) {
       throw new ConflictException('An organization with this slug exists');
+    }
+    const creator = await this.prisma.user.findUnique({
+      where: { id: creatorId },
+    });
+    if (!creator) {
+      throw new NotFoundException('Creator user not found');
     }
     const organization = await this.prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
@@ -38,6 +46,11 @@ export class OrganizationsService {
         },
       });
       return org;
+    });
+    await this.mirror.setMember(organization.id, creator.externalId, {
+      userId: creator.id,
+      role: MembershipRole.OWNER,
+      createdAt: new Date(),
     });
     await this.audit.record({
       organizationId: organization.id,
@@ -91,6 +104,11 @@ export class OrganizationsService {
     }
     const membership = await this.prisma.membership.create({
       data: { userId: user.id, organizationId, role: dto.role },
+    });
+    await this.mirror.setMember(organizationId, user.externalId, {
+      userId: user.id,
+      role: membership.role,
+      createdAt: membership.createdAt,
     });
     await this.audit.record({
       organizationId,
