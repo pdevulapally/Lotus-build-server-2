@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   MessageEvent,
   Param,
   ParseUUIDPipe,
@@ -12,7 +13,7 @@ import {
   Sse,
   UseGuards,
 } from '@nestjs/common';
-import { map, Observable } from 'rxjs';
+import { catchError, map, Observable, throwError } from 'rxjs';
 import { CurrentActor } from '../auth/current-actor.decorator';
 import { OrgActor } from '../auth/auth.types';
 import { OrgMembershipGuard } from '../auth/org-membership.guard';
@@ -24,6 +25,8 @@ import { CreateAgentRunDto } from './dto/create-agent-run.dto';
 @Controller('organizations/:organizationId')
 @UseGuards(OrgMembershipGuard)
 export class AgentController {
+  private readonly logger = new Logger(AgentController.name);
+
   constructor(
     private readonly runsService: AgentRunsService,
     private readonly eventsService: AgentEventsService,
@@ -91,6 +94,10 @@ export class AgentController {
         type: event.type,
         data: event.data,
       })),
+      catchError((error: unknown) => {
+        this.logger.error({ runId, err: error }, 'Agent event stream failed');
+        return throwError(() => new Error('Event stream unavailable'));
+      }),
     );
   }
 }

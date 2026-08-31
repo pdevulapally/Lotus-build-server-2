@@ -56,8 +56,26 @@ export class AgentLoopService {
     return (await this.redis.client.exists(this.cancelKey(runId))) === 1;
   }
 
-  /** Executes the run to completion. Invoked by the agent run queue worker. */
+  /**
+   * Executes the run to completion. Invoked by the agent run queue worker.
+   * Safe to re-invoke after a worker restart: terminal runs are skipped and
+   * step indices continue after any steps persisted by a prior attempt.
+   */
   async execute(runId: string, prompt: string): Promise<void> {
+    const run = await this.prisma.agentRun.findUnique({
+      where: { id: runId },
+    });
+    if (!run) {
+      this.logger.error({ runId }, 'Agent run job references unknown run');
+      return;
+    }
+    if (run.status !== AgentRunStatus.RUNNING) {
+      this.logger.warn(
+        { runId, status: run.status },
+        'Skipping agent run job for run already in a terminal state',
+      );
+      return;
+    }
     let sandbox: SandboxHandle | null = null;
     try {
       sandbox = await this.sandboxes.create();
@@ -99,7 +117,7 @@ export class AgentLoopService {
     const messages: Anthropic.MessageParam[] = [
       { role: 'user', content: prompt },
     ];
-    let stepIndex = 0;
+    let stepIndex = await this.prisma.agentStep.count({ where: { runId } });
 
     for (let iteration = 0; iteration < this.maxIterations; iteration++) {
       if (await this.isCancelled(runId)) {

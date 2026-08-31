@@ -84,6 +84,7 @@ export class AgentRunsService {
       await this.mirror.setRun(run.id, {
         organizationId,
         sessionId,
+        sessionCreatorId: session.creatorId,
         creatorId,
         prompt: run.prompt,
         model: run.model,
@@ -111,7 +112,21 @@ export class AgentRunsService {
       targetType: 'agent_run',
       targetId: run.id,
     });
-    await this.queue.enqueue({ runId: run.id, prompt: dto.prompt });
+    try {
+      await this.queue.enqueue({ runId: run.id, prompt: dto.prompt });
+    } catch (error) {
+      const failure = {
+        status: AgentRunStatus.FAILED,
+        error: 'Failed to enqueue agent run for execution',
+        finishedAt: new Date(),
+      };
+      await this.prisma.agentRun.update({
+        where: { id: run.id },
+        data: failure,
+      });
+      await this.mirror.updateRun(run.id, failure);
+      throw error;
+    }
     return run;
   }
 
@@ -128,7 +143,7 @@ export class AgentRunsService {
         sessionId,
         ...AgentRunsService.sessionScope(actor),
       },
-      orderBy: { startedAt: 'desc' },
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(pagination.cursor
         ? { cursor: { id: pagination.cursor }, skip: 1 }

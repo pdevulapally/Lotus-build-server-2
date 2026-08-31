@@ -72,7 +72,7 @@ export class SessionsService {
           ? { creatorId: actor.userId }
           : {}),
       },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(pagination.cursor
         ? { cursor: { id: pagination.cursor }, skip: 1 }
@@ -127,7 +127,7 @@ export class SessionsService {
     const limit = pagination.limit ?? DEFAULT_PAGE_SIZE;
     const rows = await this.prisma.message.findMany({
       where: { sessionId },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take: limit + 1,
       ...(pagination.cursor
         ? { cursor: { id: pagination.cursor }, skip: 1 }
@@ -142,7 +142,7 @@ export class SessionsService {
     actor: OrgActor,
     dto: CreateMessageDto,
   ) {
-    await this.getById(organizationId, sessionId, actor);
+    const session = await this.getById(organizationId, sessionId, actor);
     const message = await this.prisma.message.create({
       data: {
         sessionId,
@@ -154,6 +154,7 @@ export class SessionsService {
     await this.mirror.addMessage(message.id, {
       sessionId,
       organizationId,
+      sessionCreatorId: session.creatorId,
       authorId: message.authorId,
       role: message.role,
       content: message.content,

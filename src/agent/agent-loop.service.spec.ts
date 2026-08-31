@@ -38,8 +38,8 @@ function toolUseResponse(name: string, input: Record<string, unknown>) {
 describe('AgentLoopService', () => {
   let service: AgentLoopService;
   let prisma: {
-    agentRun: { update: jest.Mock };
-    agentStep: { create: jest.Mock };
+    agentRun: { update: jest.Mock; findUnique: jest.Mock };
+    agentStep: { create: jest.Mock; count: jest.Mock };
   };
   let events: { emit: jest.Mock; complete: jest.Mock };
   let tools: { definitions: unknown[]; execute: jest.Mock };
@@ -65,9 +65,16 @@ describe('AgentLoopService', () => {
       }),
     } as unknown as ConfigService<Env, true>;
     prisma = {
-      agentRun: { update: jest.fn().mockResolvedValue({}) },
+      agentRun: {
+        update: jest.fn().mockResolvedValue({}),
+        findUnique: jest.fn().mockResolvedValue({
+          id: RUN_ID,
+          status: AgentRunStatus.RUNNING,
+        }),
+      },
       agentStep: {
         create: jest.fn().mockResolvedValue({ createdAt: new Date() }),
+        count: jest.fn().mockResolvedValue(0),
       },
     };
     events = { emit: jest.fn(), complete: jest.fn() };
