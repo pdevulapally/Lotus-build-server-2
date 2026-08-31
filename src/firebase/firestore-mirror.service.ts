@@ -4,6 +4,7 @@ import { FirebaseService } from './firebase.service';
 export interface MirroredRun {
   organizationId: string;
   sessionId: string;
+  sessionCreatorId: string;
   creatorId: string;
   prompt: string;
   model: string;
@@ -25,6 +26,7 @@ export interface MirroredStep {
 export interface MirroredMessage {
   sessionId: string;
   organizationId: string;
+  sessionCreatorId: string;
   authorId: string | null;
   role: string;
   content: string;

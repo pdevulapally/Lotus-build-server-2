@@ -20,6 +20,10 @@ const validConfig = {
   E2B_SANDBOX_TIMEOUT_SECONDS: '3600',
   AGENT_MAX_ITERATIONS: '50',
   AGENT_TOOL_TIMEOUT_SECONDS: '120',
+  REDIS_URL: 'redis://:secret@localhost:6379',
+  AGENT_QUEUE_CONCURRENCY: '5',
+  MEMBERSHIP_CACHE_TTL_SECONDS: '30',
+  ENABLE_API_DOCS: 'false',
 };
 
 describe('validateEnv', () => {
@@ -38,6 +42,18 @@ describe('validateEnv', () => {
     const partial: Record<string, unknown> = { ...validConfig };
     delete partial['DATABASE_URL'];
     expect(() => validateEnv(partial)).toThrow(/DATABASE_URL/);
+  });
+
+  it('rejects a non-redis REDIS_URL', () => {
+    expect(() =>
+      validateEnv({ ...validConfig, REDIS_URL: 'http://localhost:6379' }),
+    ).toThrow(/REDIS_URL/);
+  });
+
+  it('rejects a missing REDIS_URL', () => {
+    const partial: Record<string, unknown> = { ...validConfig };
+    delete partial['REDIS_URL'];
+    expect(() => validateEnv(partial)).toThrow(/REDIS_URL/);
   });
 
   it('rejects a missing E2B API key', () => {

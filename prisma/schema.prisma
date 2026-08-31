@@ -81,6 +81,7 @@ model Session {
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   creator        User          @relation(fields: [creatorId], references: [id])
   messages       Message[]
+  agentRuns      AgentRun[]
 
   @@index([organizationId, status])
   @@index([creatorId])
@@ -143,6 +144,7 @@ model AgentRun {
   sandboxId      String?
   startedAt      DateTime       @default(now())
   finishedAt     DateTime?
+  session        Session        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   steps          AgentStep[]
 
   @@index([organizationId, sessionId])

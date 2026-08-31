@@ -5,6 +5,9 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { Env, validateEnv } from './config/env.validation';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
+import { RedisThrottlerStorage } from './redis/redis-throttler.storage';
+import { MetricsModule } from './metrics/metrics.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
@@ -31,16 +34,22 @@ import { AgentModule } from './agent/agent.module';
       }),
     }),
     ThrottlerModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService<Env, true>) => ({
+      imports: [RedisModule],
+      inject: [ConfigService, RedisThrottlerStorage],
+      useFactory: (
+        config: ConfigService<Env, true>,
+        storage: RedisThrottlerStorage,
+      ) => ({
         throttlers: [
           {
             ttl: config.get('RATE_LIMIT_TTL_SECONDS', { infer: true }) * 1000,
             limit: config.get('RATE_LIMIT_MAX', { infer: true }),
           },
         ],
+        storage,
       }),
     }),
+    RedisModule,
     PrismaModule,
     FirebaseModule,
     AuditModule,
@@ -50,6 +59,7 @@ import { AgentModule } from './agent/agent.module';
     SessionsModule,
     ApiKeysModule,
     AgentModule,
+    MetricsModule,
     HealthModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

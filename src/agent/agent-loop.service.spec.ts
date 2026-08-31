@@ -3,6 +3,8 @@ import { AgentRunStatus } from '@prisma/client';
 import { Env } from '../config/env.validation';
 import { FirestoreMirrorService } from '../firebase/firestore-mirror.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { AgentEventsService } from './agent-events.service';
 import { AgentLoopService } from './agent-loop.service';
 import { SandboxHandle, SandboxService } from './sandbox/sandbox.service';
@@ -36,14 +38,17 @@ function toolUseResponse(name: string, input: Record<string, unknown>) {
 describe('AgentLoopService', () => {
   let service: AgentLoopService;
   let prisma: {
-    agentRun: { update: jest.Mock };
-    agentStep: { create: jest.Mock };
+    agentRun: { update: jest.Mock; findUnique: jest.Mock };
+    agentStep: { create: jest.Mock; count: jest.Mock };
   };
   let events: { emit: jest.Mock; complete: jest.Mock };
   let tools: { definitions: unknown[]; execute: jest.Mock };
   let mirror: { updateRun: jest.Mock; addStep: jest.Mock };
   let sandbox: SandboxHandle;
   let sandboxes: { create: jest.Mock };
+  let redisKeys: Set<string>;
+  let redis: { client: { set: jest.Mock; exists: jest.Mock; del: jest.Mock } };
+  let metrics: { agentRunsTotal: { inc: jest.Mock } };
   let maxIterations: number;
 
   beforeEach(() => {
@@ -60,9 +65,16 @@ describe('AgentLoopService', () => {
       }),
     } as unknown as ConfigService<Env, true>;
     prisma = {
-      agentRun: { update: jest.fn().mockResolvedValue({}) },
+      agentRun: {
+        update: jest.fn().mockResolvedValue({}),
+        findUnique: jest.fn().mockResolvedValue({
+          id: RUN_ID,
+          status: AgentRunStatus.RUNNING,
+        }),
+      },
       agentStep: {
         create: jest.fn().mockResolvedValue({ createdAt: new Date() }),
+        count: jest.fn().mockResolvedValue(0),
       },
     };
     events = { emit: jest.fn(), complete: jest.fn() };
@@ -83,6 +95,23 @@ describe('AgentLoopService', () => {
       kill: jest.fn().mockResolvedValue(undefined),
     };
     sandboxes = { create: jest.fn().mockResolvedValue(sandbox) };
+    redisKeys = new Set<string>();
+    redis = {
+      client: {
+        set: jest.fn((key: string) => {
+          redisKeys.add(key);
+          return Promise.resolve('OK');
+        }),
+        exists: jest.fn((key: string) =>
+          Promise.resolve(redisKeys.has(key) ? 1 : 0),
+        ),
+        del: jest.fn((key: string) => {
+          redisKeys.delete(key);
+          return Promise.resolve(1);
+        }),
+      },
+    };
+    metrics = { agentRunsTotal: { inc: jest.fn() } };
     service = new AgentLoopService(
       configService,
       prisma as unknown as PrismaService,
@@ -90,6 +119,8 @@ describe('AgentLoopService', () => {
       tools as unknown as ToolRegistryService,
       sandboxes as unknown as SandboxService,
       mirror as unknown as FirestoreMirrorService,
+      redis as unknown as RedisService,
+      metrics as unknown as MetricsService,
     );
   });
 
@@ -187,7 +218,7 @@ describe('AgentLoopService', () => {
   });
 
   it('cancels a run between iterations', async () => {
-    service.requestCancellation(RUN_ID);
+    await service.requestCancellation(RUN_ID);
     mockMessagesCreate.mockResolvedValue(textResponse('never used'));
 
     await service.execute(RUN_ID, 'prompt');
@@ -201,6 +232,10 @@ describe('AgentLoopService', () => {
     expect(events.emit).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'run_cancelled' }),
     );
+    expect(redis.client.del).toHaveBeenCalledWith(`agent-cancel:${RUN_ID}`);
+    expect(metrics.agentRunsTotal.inc).toHaveBeenCalledWith({
+      status: AgentRunStatus.CANCELLED,
+    });
   });
 
   it('fails the run when the iteration limit is exceeded', async () => {
