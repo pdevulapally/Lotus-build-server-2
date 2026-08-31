@@ -10,6 +10,13 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']),
   PORT: z.coerce.number().int().min(1).max(65535),
   DATABASE_URL: z.string().url(),
+  REDIS_URL: z
+    .string()
+    .url()
+    .refine(
+      (value) => value.startsWith('redis://') || value.startsWith('rediss://'),
+      { message: 'must be a redis:// or rediss:// URL' },
+    ),
   FIREBASE_SERVICE_ACCOUNT_JSON: z
     .string()
     .min(1)
@@ -38,6 +45,11 @@ export const envSchema = z.object({
   E2B_SANDBOX_TIMEOUT_SECONDS: z.coerce.number().int().min(60).max(86400),
   AGENT_MAX_ITERATIONS: z.coerce.number().int().min(1).max(200),
   AGENT_TOOL_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(600),
+  AGENT_QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(50),
+  MEMBERSHIP_CACHE_TTL_SECONDS: z.coerce.number().int().min(1).max(3600),
+  ENABLE_API_DOCS: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema>;

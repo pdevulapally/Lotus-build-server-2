@@ -9,13 +9,13 @@ import { Reflector } from '@nestjs/core';
 import { MembershipRole } from '@prisma/client';
 import { AuthenticatedRequest } from './auth.types';
 import { ORG_ROLES_KEY } from './org-roles.decorator';
-import { PrismaService } from '../prisma/prisma.service';
+import { MembershipCacheService } from './membership-cache.service';
 
 @Injectable()
 export class OrgMembershipGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly prisma: PrismaService,
+    private readonly memberships: MembershipCacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -30,14 +30,11 @@ export class OrgMembershipGuard implements CanActivate {
       throw new BadRequestException('Missing organizationId parameter');
     }
 
-    const membership = await this.prisma.membership.findUnique({
-      where: {
-        userId_organizationId: { userId: user.id, organizationId },
-      },
-    });
+    const membership = await this.memberships.get(user.id, organizationId);
     if (!membership) {
       throw new ForbiddenException('Not a member of this organization');
     }
+    request.orgActor = { userId: user.id, role: membership.role };
 
     const requiredRoles =
       this.reflector.getAllAndOverride<MembershipRole[] | undefined>(

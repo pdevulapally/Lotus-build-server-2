@@ -7,6 +7,7 @@ import { MembershipRole, Organization } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { FirestoreMirrorService } from '../firebase/firestore-mirror.service';
+import { MembershipCacheService } from '../auth/membership-cache.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 
@@ -16,6 +17,7 @@ export class OrganizationsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly mirror: FirestoreMirrorService,
+    private readonly membershipCache: MembershipCacheService,
   ) {}
 
   async create(
@@ -105,6 +107,7 @@ export class OrganizationsService {
     const membership = await this.prisma.membership.create({
       data: { userId: user.id, organizationId, role: dto.role },
     });
+    await this.membershipCache.invalidate(user.id, organizationId);
     await this.mirror.setMember(organizationId, user.externalId, {
       userId: user.id,
       role: membership.role,

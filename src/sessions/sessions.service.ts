@@ -1,6 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { MessageRole, Session, SessionStatus } from '@prisma/client';
+import {
+  MembershipRole,
+  MessageRole,
+  Session,
+  SessionStatus,
+} from '@prisma/client';
+import { OrgActor } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  buildPage,
+  DEFAULT_PAGE_SIZE,
+  Page,
+  PaginationQueryDto,
+} from '../common/pagination';
 import { FirestoreMirrorService } from '../firebase/firestore-mirror.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateSessionDto } from './dto/create-session.dto';
@@ -33,21 +45,51 @@ export class SessionsService {
     return session;
   }
 
-  async list(organizationId: string, status?: SessionStatus) {
-    return this.prisma.session.findMany({
+  /**
+   * Sessions are private to their creator: regular members can only see and
+   * act on sessions they created, while org OWNER/ADMIN roles have access to
+   * all sessions in the organization. Non-accessible sessions behave as if
+   * they do not exist (404), so IDs cannot be probed via the URL.
+   */
+  private static canAccess(session: Session, actor: OrgActor): boolean {
+    return (
+      actor.role !== MembershipRole.MEMBER || session.creatorId === actor.userId
+    );
+  }
+
+  async list(
+    organizationId: string,
+    actor: OrgActor,
+    pagination: PaginationQueryDto,
+    status?: SessionStatus,
+  ): Promise<Page<Session>> {
+    const limit = pagination.limit ?? DEFAULT_PAGE_SIZE;
+    const rows = await this.prisma.session.findMany({
       where: {
         organizationId,
         status: status ?? { not: SessionStatus.DELETED },
+        ...(actor.role === MembershipRole.MEMBER
+          ? { creatorId: actor.userId }
+          : {}),
       },
       orderBy: { updatedAt: 'desc' },
+      take: limit + 1,
+      ...(pagination.cursor
+        ? { cursor: { id: pagination.cursor }, skip: 1 }
+        : {}),
     });
+    return buildPage(rows, limit);
   }
 
-  async getById(organizationId: string, sessionId: string): Promise<Session> {
+  async getById(
+    organizationId: string,
+    sessionId: string,
+    actor: OrgActor,
+  ): Promise<Session> {
     const session = await this.prisma.session.findFirst({
       where: { id: sessionId, organizationId },
     });
-    if (!session) {
+    if (!session || !SessionsService.canAccess(session, actor)) {
       throw new NotFoundException('Session not found');
     }
     return session;
@@ -56,17 +98,17 @@ export class SessionsService {
   async update(
     organizationId: string,
     sessionId: string,
-    actorId: string,
+    actor: OrgActor,
     dto: UpdateSessionDto,
   ): Promise<Session> {
-    await this.getById(organizationId, sessionId);
+    await this.getById(organizationId, sessionId, actor);
     const session = await this.prisma.session.update({
       where: { id: sessionId },
       data: { title: dto.title, status: dto.status },
     });
     await this.audit.record({
       organizationId,
-      actorId,
+      actorId: actor.userId,
       action: 'session.updated',
       targetType: 'session',
       targetId: sessionId,
@@ -78,29 +120,33 @@ export class SessionsService {
   async listMessages(
     organizationId: string,
     sessionId: string,
-    limit: number,
-    cursor?: string,
+    actor: OrgActor,
+    pagination: PaginationQueryDto,
   ) {
-    await this.getById(organizationId, sessionId);
-    return this.prisma.message.findMany({
+    await this.getById(organizationId, sessionId, actor);
+    const limit = pagination.limit ?? DEFAULT_PAGE_SIZE;
+    const rows = await this.prisma.message.findMany({
       where: { sessionId },
       orderBy: { createdAt: 'asc' },
-      take: limit,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      take: limit + 1,
+      ...(pagination.cursor
+        ? { cursor: { id: pagination.cursor }, skip: 1 }
+        : {}),
     });
+    return buildPage(rows, limit);
   }
 
   async createMessage(
     organizationId: string,
     sessionId: string,
-    authorId: string,
+    actor: OrgActor,
     dto: CreateMessageDto,
   ) {
-    await this.getById(organizationId, sessionId);
+    await this.getById(organizationId, sessionId, actor);
     const message = await this.prisma.message.create({
       data: {
         sessionId,
-        authorId: dto.role === MessageRole.USER ? authorId : null,
+        authorId: dto.role === MessageRole.USER ? actor.userId : null,
         role: dto.role,
         content: dto.content,
       },

@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
@@ -28,6 +29,16 @@ async function bootstrap(): Promise<void> {
   );
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();
+
+  if (config.get('ENABLE_API_DOCS', { infer: true })) {
+    const documentConfig = new DocumentBuilder()
+      .setTitle('Lotus Build API')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, documentConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   await app.listen(config.get('PORT', { infer: true }));
 }

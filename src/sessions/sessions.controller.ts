@@ -1,25 +1,24 @@
 import {
   Body,
   Controller,
-  DefaultValuePipe,
   Get,
   Param,
-  ParseEnumPipe,
-  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { SessionStatus } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { RequestUser } from '../auth/auth.types';
+import { CurrentActor } from '../auth/current-actor.decorator';
+import { OrgActor, RequestUser } from '../auth/auth.types';
 import { OrgMembershipGuard } from '../auth/org-membership.guard';
+import { PaginationQueryDto } from '../common/pagination';
 import { SessionsService } from './sessions.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { ListSessionsQueryDto } from './dto/list-sessions.query';
 
 @Controller('organizations/:organizationId/sessions')
 @UseGuards(OrgMembershipGuard)
@@ -38,42 +37,48 @@ export class SessionsController {
   @Get()
   list(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
-    @Query('status', new ParseEnumPipe(SessionStatus, { optional: true }))
-    status?: SessionStatus,
+    @CurrentActor() actor: OrgActor,
+    @Query() query: ListSessionsQueryDto,
   ) {
-    return this.sessionsService.list(organizationId, status);
+    return this.sessionsService.list(
+      organizationId,
+      actor,
+      query,
+      query.status,
+    );
   }
 
   @Get(':sessionId')
   get(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentActor() actor: OrgActor,
   ) {
-    return this.sessionsService.getById(organizationId, sessionId);
+    return this.sessionsService.getById(organizationId, sessionId, actor);
   }
 
   @Patch(':sessionId')
   update(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @CurrentUser() user: RequestUser,
+    @CurrentActor() actor: OrgActor,
     @Body() dto: UpdateSessionDto,
   ) {
-    return this.sessionsService.update(organizationId, sessionId, user.id, dto);
+    return this.sessionsService.update(organizationId, sessionId, actor, dto);
   }
 
   @Get(':sessionId/messages')
   listMessages(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number,
-    @Query('cursor') cursor?: string,
+    @CurrentActor() actor: OrgActor,
+    @Query() pagination: PaginationQueryDto,
   ) {
     return this.sessionsService.listMessages(
       organizationId,
       sessionId,
-      Math.min(Math.max(limit, 1), 200),
-      cursor,
+      actor,
+      pagination,
     );
   }
 
@@ -81,13 +86,13 @@ export class SessionsController {
   createMessage(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @CurrentUser() user: RequestUser,
+    @CurrentActor() actor: OrgActor,
     @Body() dto: CreateMessageDto,
   ) {
     return this.sessionsService.createMessage(
       organizationId,
       sessionId,
-      user.id,
+      actor,
       dto,
     );
   }

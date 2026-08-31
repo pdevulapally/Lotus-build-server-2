@@ -5,6 +5,8 @@ import { AgentRunStatus, AgentStepType } from '@prisma/client';
 import { Env } from '../config/env.validation';
 import { PrismaService } from '../prisma/prisma.service';
 import { FirestoreMirrorService } from '../firebase/firestore-mirror.service';
+import { RedisService } from '../redis/redis.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { AgentEventsService } from './agent-events.service';
 import { SandboxHandle, SandboxService } from './sandbox/sandbox.service';
 import { ToolRegistryService } from './tools/tool-registry.service';
@@ -22,7 +24,6 @@ export class AgentLoopService {
   private readonly client: Anthropic;
   private readonly model: string;
   private readonly maxIterations: number;
-  private readonly cancellations = new Set<string>();
 
   constructor(
     configService: ConfigService<Env, true>,
@@ -31,6 +32,8 @@ export class AgentLoopService {
     private readonly tools: ToolRegistryService,
     private readonly sandboxes: SandboxService,
     private readonly mirror: FirestoreMirrorService,
+    private readonly redis: RedisService,
+    private readonly metrics: MetricsService,
   ) {
     this.client = new Anthropic({
       apiKey: configService.get('ANTHROPIC_API_KEY', { infer: true }),
@@ -41,11 +44,19 @@ export class AgentLoopService {
     });
   }
 
-  requestCancellation(runId: string): void {
-    this.cancellations.add(runId);
+  async requestCancellation(runId: string): Promise<void> {
+    await this.redis.client.set(this.cancelKey(runId), '1', 'EX', 86400);
   }
 
-  /** Executes the run to completion. Intended to be called without awaiting. */
+  private cancelKey(runId: string): string {
+    return `agent-cancel:${runId}`;
+  }
+
+  private async isCancelled(runId: string): Promise<boolean> {
+    return (await this.redis.client.exists(this.cancelKey(runId))) === 1;
+  }
+
+  /** Executes the run to completion. Invoked by the agent run queue worker. */
   async execute(runId: string, prompt: string): Promise<void> {
     let sandbox: SandboxHandle | null = null;
     try {
@@ -57,7 +68,7 @@ export class AgentLoopService {
         error instanceof Error ? error.message : 'Unknown agent error';
       this.logger.error({ runId, err: error }, 'Agent run failed');
       await this.finishRun(runId, AgentRunStatus.FAILED, message);
-      this.events.emit({
+      await this.events.emit({
         type: 'run_failed',
         runId,
         data: { error: message },
@@ -73,8 +84,8 @@ export class AgentLoopService {
           );
         }
       }
-      this.events.complete(runId);
-      this.cancellations.delete(runId);
+      await this.events.complete(runId);
+      await this.redis.client.del(this.cancelKey(runId));
     }
   }
 
@@ -83,7 +94,7 @@ export class AgentLoopService {
     prompt: string,
     sandbox: SandboxHandle,
   ): Promise<void> {
-    this.events.emit({ type: 'run_started', runId, data: { prompt } });
+    await this.events.emit({ type: 'run_started', runId, data: { prompt } });
 
     const messages: Anthropic.MessageParam[] = [
       { role: 'user', content: prompt },
@@ -91,9 +102,9 @@ export class AgentLoopService {
     let stepIndex = 0;
 
     for (let iteration = 0; iteration < this.maxIterations; iteration++) {
-      if (this.cancellations.has(runId)) {
+      if (await this.isCancelled(runId)) {
         await this.finishRun(runId, AgentRunStatus.CANCELLED, null);
-        this.events.emit({ type: 'run_cancelled', runId, data: {} });
+        await this.events.emit({ type: 'run_cancelled', runId, data: {} });
         return;
       }
 
@@ -114,7 +125,7 @@ export class AgentLoopService {
             type: AgentStepType.ASSISTANT,
             content: block.text,
           });
-          this.events.emit({
+          await this.events.emit({
             type: 'assistant_text',
             runId,
             data: { text: block.text },
@@ -126,7 +137,7 @@ export class AgentLoopService {
 
       if (response.stop_reason !== 'tool_use' || toolUses.length === 0) {
         await this.finishRun(runId, AgentRunStatus.COMPLETED, null);
-        this.events.emit({ type: 'run_completed', runId, data: {} });
+        await this.events.emit({ type: 'run_completed', runId, data: {} });
         return;
       }
 
@@ -138,7 +149,7 @@ export class AgentLoopService {
           name: toolUse.name,
           content: JSON.stringify(input),
         });
-        this.events.emit({
+        await this.events.emit({
           type: 'tool_call',
           runId,
           data: { name: toolUse.name, input },
@@ -152,7 +163,7 @@ export class AgentLoopService {
           name: toolUse.name,
           content: result.content,
         });
-        this.events.emit({
+        await this.events.emit({
           type: 'tool_result',
           runId,
           data: {
@@ -195,6 +206,7 @@ export class AgentLoopService {
       data: { status, error, finishedAt },
     });
     await this.mirror.updateRun(runId, { status, error, finishedAt });
+    this.metrics.agentRunsTotal.inc({ status });
   }
 
   private async recordStep(

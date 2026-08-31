@@ -8,13 +8,15 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Sse,
   UseGuards,
 } from '@nestjs/common';
 import { map, Observable } from 'rxjs';
-import { CurrentUser } from '../auth/current-user.decorator';
-import { RequestUser } from '../auth/auth.types';
+import { CurrentActor } from '../auth/current-actor.decorator';
+import { OrgActor } from '../auth/auth.types';
 import { OrgMembershipGuard } from '../auth/org-membership.guard';
+import { PaginationQueryDto } from '../common/pagination';
 import { AgentRunsService } from './agent-runs.service';
 import { AgentEventsService } from './agent-events.service';
 import { CreateAgentRunDto } from './dto/create-agent-run.dto';
@@ -31,34 +33,39 @@ export class AgentController {
   create(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @CurrentUser() user: RequestUser,
+    @CurrentActor() actor: OrgActor,
     @Body() dto: CreateAgentRunDto,
   ) {
-    return this.runsService.create(organizationId, sessionId, user.id, dto);
+    return this.runsService.create(organizationId, sessionId, actor, dto);
   }
 
   @Get('sessions/:sessionId/agent-runs')
   list(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentActor() actor: OrgActor,
+    @Query() pagination: PaginationQueryDto,
   ) {
-    return this.runsService.list(organizationId, sessionId);
+    return this.runsService.list(organizationId, sessionId, actor, pagination);
   }
 
   @Get('agent-runs/:runId')
   get(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('runId', ParseUUIDPipe) runId: string,
+    @CurrentActor() actor: OrgActor,
   ) {
-    return this.runsService.getById(organizationId, runId);
+    return this.runsService.getById(organizationId, runId, actor);
   }
 
   @Get('agent-runs/:runId/steps')
   listSteps(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('runId', ParseUUIDPipe) runId: string,
+    @CurrentActor() actor: OrgActor,
+    @Query() pagination: PaginationQueryDto,
   ) {
-    return this.runsService.listSteps(organizationId, runId);
+    return this.runsService.listSteps(organizationId, runId, actor, pagination);
   }
 
   @Post('agent-runs/:runId/cancel')
@@ -66,18 +73,20 @@ export class AgentController {
   cancel(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('runId', ParseUUIDPipe) runId: string,
-    @CurrentUser() user: RequestUser,
+    @CurrentActor() actor: OrgActor,
   ) {
-    return this.runsService.cancel(organizationId, runId, user.id);
+    return this.runsService.cancel(organizationId, runId, actor);
   }
 
   @Sse('agent-runs/:runId/events')
   async events(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('runId', ParseUUIDPipe) runId: string,
+    @CurrentActor() actor: OrgActor,
   ): Promise<Observable<MessageEvent>> {
-    await this.runsService.getById(organizationId, runId);
-    return this.eventsService.observe(runId).pipe(
+    await this.runsService.getById(organizationId, runId, actor);
+    const stream = await this.eventsService.observe(runId);
+    return stream.pipe(
       map((event) => ({
         type: event.type,
         data: event.data,
